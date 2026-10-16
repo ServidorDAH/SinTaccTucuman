@@ -23,7 +23,7 @@
 [hidden] { display: none !important; }
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
-body { background: var(--negro); color: var(--blanco); font-family: var(--texto); font-size: 15px; line-height: 1.5; min-height: 100vh; min-height: 100dvh; }
+body { overflow-x: clip; background: var(--negro); color: var(--blanco); font-family: var(--texto); font-size: 15px; line-height: 1.5; min-height: 100vh; min-height: 100dvh; }
 img { max-width: 100%; display: block; }
 button { font: inherit; cursor: pointer; color: inherit; }
 a { color: var(--naranja); }
@@ -62,22 +62,36 @@ input, select, textarea { font: inherit; font-size: 16px; }
 .aviso div { background: rgba(235,151,29,.1); border: 1px solid rgba(235,151,29,.35); border-radius: var(--radio); padding: 11px 14px; color: var(--naranja-claro); font-size: 14px; }
 
 /* ---------- Catálogo ---------- */
-.main { max-width: 1180px; margin: 0 auto; padding: 10px 12px calc(110px + var(--abajo)); display: grid; grid-template-columns: 1fr; gap: 28px; align-items: start; }
-@media (min-width: 961px) { .main { grid-template-columns: 1fr 360px; padding: 16px 16px 60px; } }
+.main { max-width: 1180px; margin: 0 auto; padding: 10px 12px calc(110px + var(--abajo)); display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; align-items: start; }
+.main > * { min-width: 0; }
+@media (min-width: 961px) { .main { grid-template-columns: minmax(0, 1fr) 360px; padding: 16px 16px 60px; } }
 .seccion-titulo { font-family: var(--display); font-weight: 700; font-size: 20px; margin-bottom: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .seccion-titulo small { font-family: var(--texto); font-size: 13px; color: var(--gris); font-weight: 400; }
 .paso { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--naranja); color: var(--negro); font-family: var(--display); font-size: 14px; font-weight: 800; flex: none; }
 
 .buscar { width: 100%; background: var(--negro-2); border: 1px solid var(--borde); color: var(--blanco); border-radius: 999px; padding: 11px 16px; }
 .buscar:focus { outline: 2px solid var(--naranja); outline-offset: 1px; }
-.filtros { display: flex; gap: 8px; overflow-x: auto; padding: 10px 0 14px; margin: 0 -12px; padding-inline: 12px; scrollbar-width: none; }
+.filtros-wrap { position: relative; margin: 0 -12px; }
+.filtros { display: flex; gap: 8px; overflow-x: auto; padding: 10px 12px 14px; scrollbar-width: none; scroll-behavior: smooth; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
+.filtros-flecha { position: absolute; top: 10px; height: 39px; width: 48px; border: none; display: none; align-items: center; color: var(--naranja); font-size: 28px; font-weight: 700; line-height: 1; z-index: 2; padding: 0 0 3px; }
+.filtros-flecha.izq { left: 0; justify-content: flex-start; padding-left: 8px; background: linear-gradient(90deg, var(--negro) 45%, rgba(11,11,11,0)); }
+.filtros-flecha.der { right: 0; justify-content: flex-end; padding-right: 8px; background: linear-gradient(270deg, var(--negro) 45%, rgba(11,11,11,0)); }
+.filtros-wrap.hay-izq .izq, .filtros-wrap.hay-der .der { display: flex; }
+/* En PC: todas las categorías a la vista, en varias filas */
+@media (min-width: 961px) {
+  .filtros-wrap { margin: 0; }
+  .filtros { flex-wrap: wrap; overflow: visible; padding: 10px 0 14px; }
+  .filtros-flecha { display: none !important; }
+  .filtro:hover { border-color: var(--naranja); color: var(--blanco); }
+  .filtro.activo:hover { color: var(--negro); }
+}
 .filtros::-webkit-scrollbar { display: none; }
 .filtro { background: var(--negro-2); border: 1px solid var(--borde); color: var(--gris); border-radius: 999px; padding: 8px 14px; font-size: 14px; white-space: nowrap; flex: none; }
 .filtro.activo { background: var(--naranja); border-color: var(--naranja); color: var(--negro); font-weight: 600; }
 
-.grilla { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-@media (min-width: 640px) { .grilla { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; } }
-.prod { background: var(--negro-2); border: 1px solid var(--borde); border-radius: var(--radio); overflow: hidden; display: flex; flex-direction: column; transition: border-color .15s; }
+.grilla { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (min-width: 640px) { .grilla { grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr)); gap: 16px; } }
+.prod { min-width: 0; background: var(--negro-2); border: 1px solid var(--borde); border-radius: var(--radio); overflow: hidden; display: flex; flex-direction: column; transition: border-color .15s; }
 .prod.en-carrito { border-color: var(--naranja); }
 .prod__img { aspect-ratio: 1/1; background: var(--negro-3); position: relative; }
 @media (min-width: 640px) { .prod__img { aspect-ratio: 4/3; } }
@@ -86,7 +100,7 @@ input, select, textarea { font: inherit; font-size: 16px; }
 .prod__img .sin-img img { width: 46%; height: auto; aspect-ratio: 1/1; opacity: .25; border-radius: 50%; }
 .prod__cat { position: absolute; top: 6px; left: 6px; background: rgba(0,0,0,.72); color: var(--naranja); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; padding: 3px 7px; border-radius: 6px; font-weight: 600; }
 .prod__body { padding: 10px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
-.prod__nombre { font-family: var(--display); font-weight: 700; font-size: 15px; line-height: 1.2; }
+.prod__nombre { overflow-wrap: anywhere; font-family: var(--display); font-weight: 700; font-size: 15px; line-height: 1.2; }
 .prod__desc { color: var(--gris); font-size: 12px; line-height: 1.35; }
 .prod__precio { font-family: var(--display); font-weight: 800; font-size: 18px; color: var(--naranja); margin-top: auto; padding-top: 4px; line-height: 1.2; }
 .prod__precio small { display: block; font-family: var(--texto); font-size: 11px; color: var(--gris); font-weight: 400; }
@@ -109,7 +123,7 @@ input, select, textarea { font: inherit; font-size: 16px; }
 
 /* ---------- Panel del pedido ---------- */
 .panel { background: var(--negro-2); border: 1px solid var(--borde); border-radius: var(--radio); padding: 16px; scroll-margin-top: 70px; }
-@media (min-width: 961px) { .panel { position: sticky; top: 88px; padding: 18px; } }
+@media (min-width: 961px) { .panel { position: sticky; top: 88px; padding: 18px; max-height: calc(100vh - 104px); max-height: calc(100dvh - 104px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--borde) transparent; } }
 .resumen { list-style: none; display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow: auto; margin-bottom: 10px; }
 .resumen li { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; border-bottom: 1px dashed var(--borde); padding-bottom: 8px; }
 .resumen li b { white-space: nowrap; }
@@ -130,8 +144,9 @@ input, select, textarea { font: inherit; font-size: 16px; }
 .form textarea { min-height: 80px; resize: vertical; }
 .form input:focus, .form select:focus, .form textarea:focus, .input:focus { outline: 2px solid var(--naranja); outline-offset: 0; border-color: transparent; }
 .form input[type=file] { color: var(--gris); font-size: 14px; }
-.fila { display: grid; grid-template-columns: 1fr; gap: 12px; }
-@media (min-width: 400px) { .fila { grid-template-columns: 1fr 1fr; gap: 10px; } }
+.fila { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.fila > *, .campo { min-width: 0; }
+@media (min-width: 400px) { .fila { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: end; } }
 input[type="date"] { color-scheme: dark; }
 
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--borde); background: var(--negro-3); color: var(--blanco); border-radius: 10px; padding: 11px 16px; min-height: 44px; font-weight: 600; text-decoration: none; white-space: nowrap; }
@@ -150,6 +165,8 @@ input[type="date"] { color-scheme: dark; }
 
 .barra-movil { display: none; position: fixed; left: 12px; right: 12px; bottom: calc(12px + var(--abajo)); z-index: 30; background: var(--naranja); color: var(--negro); border-radius: 14px; padding: 15px 18px; font-weight: 700; justify-content: space-between; align-items: center; box-shadow: 0 10px 30px rgba(0,0,0,.6); border: none; font-size: 15px; }
 @media (max-width: 960px) { .barra-movil.visible { display: flex; } }
+.barra-movil > span { white-space: nowrap; }
+@media (max-width: 374px) { .barra-movil { font-size: 14px; padding: 14px; gap: 8px; } .barra-extra { display: none; } }
 
 .footer { text-align: center; color: #666; font-size: 12px; padding: 24px 16px calc(24px + var(--abajo)); border-top: 1px solid var(--borde); }
 
@@ -174,9 +191,10 @@ input[type="date"] { color-scheme: dark; }
 .toolbar .buscar { flex: 1 1 100%; }
 @media (min-width: 700px) { .toolbar .buscar { flex: 1 1 260px; } }
 
-.lista { display: grid; grid-template-columns: 1fr; gap: 10px; }
-@media (min-width: 700px) { .lista { grid-template-columns: 1fr 1fr; } }
-@media (min-width: 1050px) { .lista--prod { grid-template-columns: 1fr 1fr 1fr; } }
+.lista { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.lista > * { min-width: 0; }
+@media (min-width: 700px) { .lista { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1050px) { .lista--prod { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .item { background: var(--negro-2); border: 1px solid var(--borde); border-radius: var(--radio); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .item__top { display: flex; gap: 12px; align-items: flex-start; }
 .item__img { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; background: var(--negro-3); flex: none; }
@@ -200,7 +218,7 @@ input[type="date"] { color-scheme: dark; }
 .ped__obs { color: var(--naranja-claro); font-size: 13px; }
 .ped__total { font-family: var(--display); font-weight: 800; font-size: 20px; }
 
-.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
 .stat { background: var(--negro-2); border: 1px solid var(--borde); border-radius: var(--radio); padding: 10px 12px; min-width: 0; }
 .stat span { color: var(--gris); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; display: block; }
 .stat b { display: block; font-family: var(--display); font-size: 20px; color: var(--naranja); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -268,7 +286,11 @@ body.bloqueado { overflow: hidden; }
     <section>
       <h2 class="seccion-titulo"><span class="paso">1</span> Elegí los productos</h2>
       <input type="search" id="buscar" class="buscar" placeholder="Buscar producto…" />
-      <div id="categorias" class="filtros"></div>
+      <div class="filtros-wrap" id="filtros-wrap" hidden>
+        <button type="button" class="filtros-flecha izq" data-dir="-1" aria-label="Ver categorías anteriores" tabindex="-1">‹</button>
+        <div id="categorias" class="filtros" role="toolbar" aria-label="Categorías"></div>
+        <button type="button" class="filtros-flecha der" data-dir="1" aria-label="Ver más categorías" tabindex="-1">›</button>
+      </div>
       <div id="grilla" class="grilla"><div class="vacio">Cargando productos…</div></div>
     </section>
 
@@ -669,17 +691,44 @@ async function cargarCatalogo() {
 }
 
 function pintarCategorias() {
-  const cats = [...new Set(productos.map((p) => (p.categoria || "").trim()).filter(Boolean))].sort();
-  $("categorias").hidden = cats.length < 2;
-  $("categorias").innerHTML = ["", ...cats]
-    .map((c) => `<button type="button" class="filtro ${c === filtroCat ? "activo" : ""}" data-cat="${esc(c)}">${c ? esc(c) : "Todos"}</button>`)
+  const cats = [...new Set(productos.map((p) => (p.categoria || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+  if (filtroCat && !cats.includes(filtroCat)) filtroCat = "";
+  $("filtros-wrap").hidden = cats.length < 2;
+  const c = $("categorias");
+  const pos = c.scrollLeft;
+  c.innerHTML = ["", ...cats]
+    .map((cat) => `<button type="button" class="filtro ${cat === filtroCat ? "activo" : ""}" data-cat="${esc(cat)}" aria-pressed="${cat === filtroCat}">${cat ? esc(cat) : "Todos"}</button>`)
     .join("");
+  c.scrollLeft = pos;
+  actualizarFlechas();
 }
+// Muestra las flechas ‹ › solo cuando hay categorías ocultas hacia ese lado
+function actualizarFlechas() {
+  const c = $("categorias"), w = $("filtros-wrap");
+  const max = c.scrollWidth - c.clientWidth;
+  w.classList.toggle("hay-izq", max > 4 && c.scrollLeft > 4);
+  w.classList.toggle("hay-der", max > 4 && c.scrollLeft < max - 4);
+}
+$("categorias").addEventListener("scroll", actualizarFlechas, { passive: true });
+window.addEventListener("resize", actualizarFlechas);
+$("filtros-wrap").addEventListener("click", (e) => {
+  const f = e.target.closest(".filtros-flecha");
+  if (!f) return;
+  const c = $("categorias");
+  c.scrollBy({ left: Number(f.dataset.dir) * Math.max(120, c.clientWidth * 0.7), behavior: "smooth" });
+});
 $("categorias").addEventListener("click", (e) => {
   const b = e.target.closest("[data-cat]");
   if (!b) return;
   filtroCat = b.dataset.cat;
-  pintarCategorias();
+  // Solo cambia el resaltado: la fila no se mueve de lugar
+  $("categorias").querySelectorAll(".filtro").forEach((x) => {
+    const act = x === b;
+    x.classList.toggle("activo", act);
+    x.setAttribute("aria-pressed", act);
+  });
+  // Si quedó cortada en el borde, se acomoda para verse entera
+  b.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
   pintarGrilla();
 });
 $("buscar").addEventListener("input", (e) => { textoBusqueda = e.target.value.trim().toLowerCase(); pintarGrilla(); });
@@ -758,7 +807,7 @@ function pintarResumen() {
     : `<li style="border:none;color:var(--gris)">Todavía no agregaste productos.</li>`;
   $("total").textContent = fmtPrecio(total);
   $("contador").textContent = items.length;
-  $("barra-cant").textContent = `${items.length} producto${items.length === 1 ? "" : "s"} · ${unidades} u.`;
+  $("barra-cant").innerHTML = `${items.length} producto${items.length === 1 ? "" : "s"}<span class="barra-extra"> · ${unidades} u.</span>`;
   $("barra-total").textContent = fmtPrecio(total);
   $("barra-movil").classList.toggle("visible", items.length > 0);
   const min = Number(ajustes.pedido_minimo) || 0;
