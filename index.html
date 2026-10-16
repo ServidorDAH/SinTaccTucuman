@@ -296,16 +296,6 @@ body.bloqueado { overflow: hidden; }
         </div>
         <div class="fila">
           <div class="campo">
-            <label for="cuit">CUIT</label>
-            <input id="cuit" inputmode="numeric" placeholder="Opcional" />
-          </div>
-          <div class="campo">
-            <label for="email">Email</label>
-            <input id="email" type="email" autocomplete="email" placeholder="Opcional" />
-          </div>
-        </div>
-        <div class="fila">
-          <div class="campo">
             <label for="localidad">Localidad <i>*</i></label>
             <input id="localidad" required autocomplete="address-level2" />
           </div>
@@ -323,20 +313,14 @@ body.bloqueado { overflow: hidden; }
           <label for="direccion">Dirección de entrega <i>*</i></label>
           <input id="direccion" autocomplete="street-address" />
         </div>
-        <div class="fila">
-          <div class="campo">
-            <label for="fecha">Fecha deseada</label>
-            <input id="fecha" type="date" />
-          </div>
-          <div class="campo">
-            <label for="pago">Forma de pago</label>
-            <select id="pago">
-              <option value="">— Elegir —</option>
-              <option>Efectivo</option>
-              <option>Transferencia</option>
-              <option>A convenir</option>
-            </select>
-          </div>
+        <div class="campo">
+          <label for="pago">Forma de pago</label>
+          <select id="pago">
+            <option value="">— Elegir —</option>
+            <option>Efectivo</option>
+            <option>Transferencia</option>
+            <option>A convenir</option>
+          </select>
         </div>
         <div class="campo">
           <label for="obs">Observaciones</label>
@@ -654,11 +638,6 @@ let textoBusqueda = "";
 try { carrito = JSON.parse(localStorage.getItem(CLAVE_CARRITO) || "{}") || {}; } catch { carrito = {}; }
 const guardarCarrito = () => { try { localStorage.setItem(CLAVE_CARRITO, JSON.stringify(carrito)); } catch {} };
 
-(() => {
-  const hoy = new Date();
-  hoy.setMinutes(hoy.getMinutes() - hoy.getTimezoneOffset());
-  $("fecha").min = hoy.toISOString().slice(0, 10);
-})();
 
 window.cargarCatalogo = cargarCatalogo;
 async function cargarCatalogo() {
@@ -807,12 +786,9 @@ function armarMensaje(d, items, total) {
   const l = [];
   l.push("*NUEVO PEDIDO MAYORISTA*", "");
   l.push(`*Negocio:* ${d.negocio}`, `*Contacto:* ${d.contacto}`);
-  if (d.cuit) l.push(`*CUIT:* ${d.cuit}`);
   l.push(`*Teléfono:* ${d.telefono}`);
-  if (d.email) l.push(`*Email:* ${d.email}`);
   l.push(`*Localidad:* ${d.localidad}`, `*Entrega:* ${d.entrega}`);
   if (d.direccion) l.push(`*Dirección:* ${d.direccion}`);
-  if (d.fecha_entrega) l.push(`*Fecha deseada:* ${d.fecha_entrega.split("-").reverse().join("/")}`);
   if (d.pago) l.push(`*Pago:* ${d.pago}`);
   l.push("", "*PRODUCTOS*");
   items.forEach((i) => l.push(`• ${i.cantidad} × ${i.nombre} (${i.unidad}) — ${fmtPrecio(i.subtotal)}`));
@@ -835,10 +811,10 @@ $("form-pedido").addEventListener("submit", async (e) => {
 
   const datos = {
     negocio: $("negocio").value.trim(), contacto: $("contacto").value.trim(),
-    cuit: $("cuit").value.trim(), telefono: $("telefono").value.trim(), email: $("email").value.trim(),
+    telefono: $("telefono").value.trim(),
     localidad: $("localidad").value.trim(), entrega: $("entrega").value,
     direccion: $("campo-direccion").hidden ? "" : $("direccion").value.trim(),
-    fecha_entrega: $("fecha").value || null, pago: $("pago").value, observaciones: $("obs").value.trim(),
+    pago: $("pago").value, observaciones: $("obs").value.trim(),
   };
   const btn = $("enviar");
   btn.disabled = true; btn.textContent = "Enviando…";
@@ -1215,16 +1191,17 @@ const XLSX_LITE = (() => {
 $("dl-excel").addEventListener("click", () => {
   if (!pedidos.length) return alert("No hay pedidos para descargar.");
   const t = totales();
-  const resumen = [["N°", "Fecha", "Estado pedido", "Estado pago", "Negocio", "Contacto", "CUIT", "Teléfono", "Email", "Localidad", "Entrega", "Dirección", "Fecha deseada", "Forma de pago", "Productos", "Total", "Observaciones"]];
-  pedidos.forEach((p) => resumen.push([p.id, fechaHora(p.created_at), p.estado, pagoDe(p), p.negocio, p.contacto, p.cuit, p.telefono, p.email, p.localidad,
-    p.entrega, p.direccion, fechaCorta(p.fecha_entrega), p.pago, (p.items || []).map((i) => `${i.cantidad} x ${i.nombre}`).join(" | "), Number(p.total), p.observaciones]));
-  resumen.push([], ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "Total (sin cancelados)", t.total], ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "Cobrado", t.cobrado], ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "Por cobrar", t.pendiente]);
-  const detalle = [["N° pedido", "Fecha", "Estado pedido", "Estado pago", "Negocio", "Teléfono", "Localidad", "Entrega", "Fecha deseada", "Producto", "Unidad", "Cantidad", "Precio unitario", "Subtotal"]];
+  const resumen = [["N°", "Fecha", "Estado pedido", "Estado pago", "Negocio", "Contacto", "Teléfono", "Localidad", "Entrega", "Dirección", "Forma de pago", "Productos", "Total", "Observaciones"]];
+  pedidos.forEach((p) => resumen.push([p.id, fechaHora(p.created_at), p.estado, pagoDe(p), p.negocio, p.contacto, p.telefono, p.localidad,
+    p.entrega, p.direccion, p.pago, (p.items || []).map((i) => `${i.cantidad} x ${i.nombre}`).join(" | "), Number(p.total), p.observaciones]));
+  const pie = (texto, valor) => [...Array(11).fill(""), texto, valor];
+  resumen.push([], pie("Total (sin cancelados)", t.total), pie("Cobrado", t.cobrado), pie("Por cobrar", t.pendiente));
+  const detalle = [["N° pedido", "Fecha", "Estado pedido", "Estado pago", "Negocio", "Teléfono", "Localidad", "Entrega", "Producto", "Unidad", "Cantidad", "Precio unitario", "Subtotal"]];
   pedidos.forEach((p) => (p.items || []).forEach((i) => detalle.push([p.id, fechaHora(p.created_at), p.estado, pagoDe(p), p.negocio, p.telefono, p.localidad,
-    p.entrega, fechaCorta(p.fecha_entrega), i.nombre, i.unidad, Number(i.cantidad), Number(i.precio), Number(i.subtotal)])));
+    p.entrega, i.nombre, i.unidad, Number(i.cantidad), Number(i.precio), Number(i.subtotal)])));
   const blob = XLSX_LITE([
-    { nombre: "Pedidos", filas: resumen, moneda: [15], anchos: [7, 17, 13, 12, 26, 20, 15, 16, 24, 16, 22, 26, 13, 14, 50, 14, 36] },
-    { nombre: "Detalle por producto", filas: detalle, moneda: [12, 13], anchos: [10, 17, 13, 12, 26, 16, 16, 22, 13, 32, 12, 10, 15, 15] },
+    { nombre: "Pedidos", filas: resumen, moneda: [12], anchos: [7, 17, 13, 12, 26, 20, 16, 16, 22, 26, 14, 50, 14, 36] },
+    { nombre: "Detalle por producto", filas: detalle, moneda: [11, 12], anchos: [10, 17, 13, 12, 26, 16, 16, 22, 32, 12, 10, 15, 15] },
   ]);
   descargarBlob(blob, `pedidos-${sello()}.xlsx`);
 });
