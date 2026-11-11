@@ -105,6 +105,14 @@ input, select, textarea { font: inherit; font-size: 16px; }
 .prod__precio { font-family: var(--display); font-weight: 800; font-size: 18px; color: var(--naranja); margin-top: auto; padding-top: 4px; line-height: 1.2; }
 .prod__precio small { display: block; font-family: var(--texto); font-size: 11px; color: var(--gris); font-weight: 400; }
 .prod__min { font-size: 11px; color: var(--gris); }
+.prod__stock { font-size: 12px; color: var(--gris); min-height: 1em; }
+.prod__stock.poco { color: var(--naranja-claro); font-weight: 600; }
+.prod__stock.tope { color: var(--naranja-claro); }
+.prod__stock.aviso { color: #ff9b94; font-weight: 600; }
+.prod__agotado { position: absolute; bottom: 8px; left: 6px; background: var(--rojo); color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 3px 8px; border-radius: 6px; }
+.prod.agotado .prod__img > img, .prod.agotado .prod__img .sin-img { filter: grayscale(1); opacity: .45; }
+.prod.agotado .prod__precio { color: var(--gris); }
+.cant button:disabled, .cant input:disabled { opacity: .35; cursor: not-allowed; }
 .cant { display: grid; grid-template-columns: 36px 1fr 36px; gap: 4px; margin-top: 6px; }
 .cant button { height: 38px; border-radius: 10px; border: 1px solid var(--borde); background: var(--negro-3); font-size: 20px; line-height: 1; }
 .cant button:active { background: var(--naranja); color: var(--negro); }
@@ -203,7 +211,13 @@ input[type="date"] { color-scheme: dark; }
 .item__meta { color: var(--gris); font-size: 13px; }
 .item__pie { display: flex; gap: 8px; align-items: center; }
 .item__pie .input { flex: 1; min-width: 0; }
-.precio-edit { display: flex; align-items: center; gap: 6px; flex: 1; }
+.precio-edit { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.item__pie--prod { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
+@media (max-width: 359px) { .item__pie--prod { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .item__pie--prod .btn { grid-column: 1 / -1; } }
+.stock-edit span { font-size: 12px; }
+.estado.sin { color: #ff9b94; border-color: rgba(229,83,75,.5); }
+.estado.poco { color: var(--naranja-claro); border-color: rgba(235,151,29,.5); }
+.estado.ok { color: #bbb; }
 .precio-edit span { color: var(--gris); }
 .precio-edit .input { text-align: right; font-weight: 600; }
 .estado { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--borde); white-space: nowrap; display: inline-block; margin-top: 4px; }
@@ -411,6 +425,11 @@ body.bloqueado { overflow: hidden; }
     <section id="v-productos" class="vista activa">
       <div class="toolbar">
         <input id="buscar-prod" class="buscar" type="search" placeholder="Buscar producto…" />
+        <select id="filtro-stock" class="input" aria-label="Filtrar por stock">
+          <option value="">Todo el stock</option>
+          <option value="sin">Sin stock</option>
+          <option value="poco">Poco stock (5 o menos)</option>
+        </select>
         <button id="nuevo-prod" class="btn btn--prim">+ Nuevo producto</button>
       </div>
       <div id="lista-prod" class="lista lista--prod"><div class="vacio">Cargando…</div></div>
@@ -435,6 +454,7 @@ body.bloqueado { overflow: hidden; }
         </label>
       </div>
       <div class="toolbar">
+        <label class="filtro-fecha">Mes del resumen (PDF)<input id="mes-resumen" type="month" class="input" /></label>
         <button id="dl-excel" class="btn btn--excel">⬇ Descargar Excel</button>
         <button id="dl-pdf" class="btn btn--pdf">⬇ Descargar PDF</button>
       </div>
@@ -497,6 +517,11 @@ body.bloqueado { overflow: hidden; }
           <label for="p-unidad">Se vende por</label>
           <input id="p-unidad" placeholder="unidad, caja x12, kg" />
         </div>
+      </div>
+      <div class="campo">
+        <label for="p-stock">Stock disponible</label>
+        <input id="p-stock" type="number" inputmode="numeric" min="0" step="1" placeholder="Vacío = sin control de stock" />
+        <small>En la misma unidad en que se vende. Se descuenta solo con cada pedido.</small>
       </div>
       <div class="fila">
         <div class="campo">
@@ -588,6 +613,11 @@ const limpiarMsg = (el) => { el.className = "msg"; el.textContent = ""; };
 $("anio").textContent = new Date().getFullYear();
 
 let productos = [];
+// ---- Stock ----
+const POCO_STOCK = 5;
+const controlaStock = (p) => p && p.stock !== null && p.stock !== undefined && p.stock !== "";
+const stockDe = (p) => (controlaStock(p) ? Math.max(0, Math.floor(Number(p.stock) || 0)) : Infinity);
+const agotado = (p) => stockDe(p) < Math.max(1, p.minimo || 1);
 let ajustes = { whatsapp: "", pedido_minimo: 0, aviso: "" };
 
 /* =====================================================================
@@ -675,8 +705,12 @@ async function cargarCatalogo() {
   productos = (resProd.data || []).filter((p) => p.activo);
   if (resAj.data) ajustes = resAj.data;
 
-  const ids = new Set(productos.map((p) => String(p.id)));
-  Object.keys(carrito).forEach((k) => { if (!ids.has(k)) delete carrito[k]; });
+  // Quitar del carrito lo que ya no existe y ajustar cantidades al stock disponible
+  Object.keys(carrito).forEach((k) => {
+    const p = productos.find((x) => String(x.id) === k);
+    if (!p || agotado(p)) { delete carrito[k]; return; }
+    if (carrito[k] > stockDe(p)) carrito[k] = stockDe(p);
+  });
   guardarCarrito();
 
   $("aviso").hidden = !ajustes.aviso;
@@ -743,17 +777,20 @@ function pintarGrilla() {
   }
   $("grilla").innerHTML = lista.map((p) => {
     const cant = carrito[p.id] || 0;
+    const sin = agotado(p);
     return `
-    <article class="prod ${cant ? "en-carrito" : ""}" data-id="${p.id}">
+    <article class="prod ${cant ? "en-carrito" : ""} ${sin ? "agotado" : ""}" data-id="${p.id}">
       <div class="prod__img">
         ${p.imagen_url ? `<img src="${esc(p.imagen_url)}" alt="${esc(p.nombre)}" loading="lazy" />` : `<div class="sin-img"><img src="${LOGO}" alt="" /></div>`}
         ${p.categoria ? `<span class="prod__cat">${esc(p.categoria)}</span>` : ""}
+        ${sin ? `<span class="prod__agotado">Sin stock</span>` : ""}
       </div>
       <div class="prod__body">
         <div class="prod__nombre">${esc(p.nombre)}</div>
         ${p.descripcion ? `<div class="prod__desc">${esc(p.descripcion)}</div>` : ""}
         <div class="prod__precio">${fmtPrecio(p.precio)} <small>por ${esc(p.unidad || "unidad")}</small></div>
         ${p.minimo > 1 ? `<div class="prod__min">Mínimo: ${p.minimo}</div>` : ""}
+        <div class="prod__stock"></div>
         <div class="cant">
           <button type="button" data-acc="menos" aria-label="Quitar">−</button>
           <input type="number" min="0" inputmode="numeric" value="${cant}" aria-label="Cantidad de ${esc(p.nombre)}" />
@@ -762,18 +799,51 @@ function pintarGrilla() {
       </div>
     </article>`;
   }).join("");
+  lista.forEach((p) => actualizarTarjeta(p));
+}
+
+// Muestra cuánto stock queda (descontando lo que ya está en el carrito) y bloquea los botones
+function actualizarTarjeta(p, aviso) {
+  const card = document.querySelector(`.prod[data-id="${p.id}"]`);
+  if (!card) return;
+  const cant = carrito[p.id] || 0;
+  const stock = stockDe(p);
+  const sin = agotado(p);
+  const input = card.querySelector(".cant input");
+  const [menos, mas] = card.querySelectorAll(".cant button");
+  card.classList.toggle("en-carrito", cant > 0);
+  input.value = cant;
+  input.disabled = sin;
+  menos.disabled = sin || cant === 0;
+  mas.disabled = sin || cant >= stock;
+  if (isFinite(stock)) input.max = stock; else input.removeAttribute("max");
+  const linea = card.querySelector(".prod__stock");
+  let texto = "", clase = "";
+  if (aviso) { texto = aviso; clase = "aviso"; }
+  else if (sin) { texto = "Sin stock por ahora"; clase = "aviso"; }
+  else if (isFinite(stock)) {
+    const quedan = stock - cant;
+    if (quedan <= 0) { texto = "No hay más disponibles"; clase = "tope"; }
+    else { texto = `Disponibles: ${quedan}`; clase = quedan <= POCO_STOCK ? "poco" : ""; }
+  }
+  linea.textContent = texto;
+  linea.className = "prod__stock " + clase;
 }
 
 function setCantidad(id, cant) {
   const p = productos.find((x) => String(x.id) === String(id));
   if (!p) return;
   const min = Math.max(1, p.minimo || 1);
+  const stock = stockDe(p);
+  let aviso = "";
   cant = Math.max(0, Math.floor(Number(cant) || 0));
   if (cant > 0 && cant < min) cant = min;
+  if (cant > stock) { cant = stock; aviso = `Solo hay ${stock} disponibles`; }
+  if (cant > 0 && cant < min) { cant = 0; aviso = "Sin stock suficiente"; }
   if (cant) carrito[id] = cant; else delete carrito[id];
   guardarCarrito();
-  const card = document.querySelector(`.prod[data-id="${id}"]`);
-  if (card) { card.classList.toggle("en-carrito", cant > 0); card.querySelector("input").value = cant; }
+  actualizarTarjeta(p, aviso);
+  if (aviso) setTimeout(() => actualizarTarjeta(p), 2500);
   pintarResumen();
 }
 $("grilla").addEventListener("click", (e) => {
@@ -781,6 +851,7 @@ $("grilla").addEventListener("click", (e) => {
   if (!b) return;
   const id = b.closest(".prod").dataset.id;
   const p = productos.find((x) => String(x.id) === id);
+  if (!p || agotado(p)) return;
   const min = Math.max(1, p.minimo || 1);
   const actual = carrito[id] || 0;
   if (b.dataset.acc === "mas") setCantidad(id, actual === 0 ? min : actual + 1);
@@ -831,9 +902,9 @@ $("entrega").addEventListener("change", (e) => {
   $("direccion").required = necesita;
 });
 
-function armarMensaje(d, items, total) {
+function armarMensaje(d, items, total, nro) {
   const l = [];
-  l.push("*NUEVO PEDIDO MAYORISTA*", "");
+  l.push(`*NUEVO PEDIDO MAYORISTA*${nro ? ` N° ${nro}` : ""}`, "");
   l.push(`*Negocio:* ${d.negocio}`, `*Contacto:* ${d.contacto}`);
   l.push(`*Teléfono:* ${d.telefono}`);
   l.push(`*Localidad:* ${d.localidad}`, `*Entrega:* ${d.entrega}`);
@@ -866,15 +937,51 @@ $("form-pedido").addEventListener("submit", async (e) => {
     pago: $("pago").value, observaciones: $("obs").value.trim(),
   };
   const btn = $("enviar");
+  const listo = () => { btn.disabled = false; btn.textContent = "Enviar pedido por WhatsApp"; };
   btn.disabled = true; btn.textContent = "Enviando…";
-  const { error } = await sb.from("pedidos").insert({ ...datos, items, total });
-  if (error) console.warn("No se pudo registrar el pedido:", error.message);
-  const url = `https://wa.me/${numero}?text=${encodeURIComponent(armarMensaje(datos, items, total))}`;
+
+  // Se crea el pedido y se descuenta el stock en Supabase (todo junto, o nada)
+  let nro = null;
+  let res;
+  try {
+    res = await sb.rpc("crear_pedido", { p: { ...datos, items: items.map((i) => ({ id: i.id, nombre: i.nombre, cantidad: i.cantidad })) } });
+  } catch (err) { res = { error: err }; }
+  if (res.error) {
+    const m = String(res.error.message || "") + " " + String(res.error.code || "");
+    if (/crear_pedido|PGRST202|schema cache/i.test(m)) {
+      // Base sin actualizar (falta ejecutar supabase.sql): se usa el método anterior
+      const { error } = await sb.from("pedidos").insert({ ...datos, items, total });
+      if (error) console.warn("No se pudo registrar el pedido:", error.message);
+    } else {
+      listo();
+      let texto = "No se pudo enviar el pedido. Revisá tu conexión e intentá de nuevo.";
+      const sinStock = m.match(/SIN_STOCK:(.*):(\d+)/);
+      const minimo = m.match(/MINIMO:(.*):(\d+)/);
+      const noDisp = m.match(/NO_DISPONIBLE:(.*?)\s*$/);
+      if (sinStock) texto = Number(sinStock[2]) > 0
+        ? `Ya no hay stock suficiente de "${sinStock[1]}": quedan ${sinStock[2]}. Ajustamos tu pedido; revisalo y volvé a enviarlo.`
+        : `"${sinStock[1]}" se quedó sin stock y lo quitamos de tu pedido. Revisalo y volvé a enviarlo.`;
+      else if (minimo) texto = `El pedido mínimo de "${minimo[1]}" es ${minimo[2]}.`;
+      else if (noDisp) texto = "Uno de los productos ya no está disponible y lo quitamos de tu pedido. Revisalo y volvé a enviarlo.";
+      else if (/FALTAN_DATOS/.test(m)) texto = "Completá los campos obligatorios (*).";
+      await cargarCatalogo(); // trae el stock actualizado y ajusta el carrito
+      return msg($("msg"), "error", texto);
+    }
+  } else {
+    nro = res.data;
+  }
+  const url = `https://wa.me/${numero}?text=${encodeURIComponent(armarMensaje(datos, items, total, nro))}`;
   carrito = {}; guardarCarrito(); pintarGrilla(); pintarResumen();
-  btn.disabled = false; btn.textContent = "Enviar pedido por WhatsApp";
+  listo();
   msg($("msg"), "ok", "¡Listo! Se abrió WhatsApp con tu pedido. Solo tocá enviar.");
   window.location.href = url;
 });
+
+function refrescarCatalogo() {
+  if (!$("vista-catalogo").hidden) cargarCatalogo();
+}
+window.addEventListener("pageshow", (e) => { if (e.persisted) refrescarCatalogo(); });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refrescarCatalogo(); });
 
 /* =====================================================================
    ADMIN · LOGIN
@@ -931,7 +1038,9 @@ async function cargarProductosAdmin() {
 
 function pintarProductosAdmin() {
   const q = $("buscar-prod").value.trim().toLowerCase();
-  const lista = productosAdmin.filter((p) => !q || `${p.nombre} ${p.categoria}`.toLowerCase().includes(q));
+  const fs = $("filtro-stock").value;
+  const lista = productosAdmin.filter((p) => (!q || `${p.nombre} ${p.categoria}`.toLowerCase().includes(q)) &&
+    (!fs || (fs === "sin" ? controlaStock(p) && p.stock <= 0 : controlaStock(p) && p.stock > 0 && p.stock <= POCO_STOCK)));
   $("lista-prod").innerHTML = lista.length ? lista.map((p) => `
     <div class="item">
       <div class="item__top">
@@ -940,11 +1049,15 @@ function pintarProductosAdmin() {
           <div class="item__nombre">${esc(p.nombre)}</div>
           <div class="item__meta">${esc(p.categoria || "Sin categoría")} · por ${esc(p.unidad || "unidad")}${p.minimo > 1 ? ` · mín. ${p.minimo}` : ""}</div>
           <span class="estado ${p.activo ? "on" : "off"}">${p.activo ? "Visible" : "Oculto"}</span>
+          ${etiquetaStock(p)}
         </div>
       </div>
-      <div class="item__pie">
+      <div class="item__pie item__pie--prod">
         <label class="precio-edit"><span>$</span>
           <input class="input" type="number" inputmode="decimal" min="0" step="0.01" value="${p.precio}" data-precio="${p.id}" aria-label="Precio de ${esc(p.nombre)}" />
+        </label>
+        <label class="precio-edit stock-edit"><span>Stock</span>
+          <input class="input" type="number" inputmode="numeric" min="0" step="1" value="${controlaStock(p) ? p.stock : ""}" placeholder="∞" data-stock="${p.id}" aria-label="Stock de ${esc(p.nombre)}" />
         </label>
         <button class="btn" data-editar="${p.id}">Editar</button>
       </div>
@@ -952,9 +1065,31 @@ function pintarProductosAdmin() {
     : `<div class="vacio">${productosAdmin.length ? "Sin resultados." : "Todavía no hay productos.<br>Tocá “+ Nuevo producto”."}</div>`;
 }
 $("buscar-prod").addEventListener("input", pintarProductosAdmin);
+$("filtro-stock").addEventListener("change", pintarProductosAdmin);
+function etiquetaStock(p) {
+  if (!controlaStock(p)) return `<span class="estado ok">Sin control de stock</span>`;
+  if (p.stock <= 0) return `<span class="estado sin">Sin stock</span>`;
+  if (p.stock <= POCO_STOCK) return `<span class="estado poco">Quedan ${p.stock}</span>`;
+  return `<span class="estado ok">Stock: ${p.stock}</span>`;
+}
 
 // Cambio rápido de precio: se guarda al salir del campo
 $("lista-prod").addEventListener("change", async (e) => {
+  const st = e.target.closest("[data-stock]");
+  if (st) {
+    const id = Number(st.dataset.stock);
+    const stock = st.value.trim() === "" ? null : Math.max(0, Math.floor(Number(st.value)));
+    if (stock !== null && !isFinite(stock)) return;
+    st.disabled = true;
+    const { error } = await sb.from("productos").update({ stock }).eq("id", id);
+    st.disabled = false;
+    if (error) return alert("No se pudo guardar el stock: " + error.message + (/stock/.test(error.message) ? "\n\nEjecutá el archivo supabase.sql actualizado en Supabase." : ""));
+    const p = productosAdmin.find((x) => x.id === id);
+    if (p) { p.stock = stock; st.value = stock ?? ""; st.closest(".item").querySelector(".item__info").lastElementChild.outerHTML = etiquetaStock(p); }
+    st.style.outline = "2px solid var(--verde)";
+    setTimeout(() => (st.style.outline = ""), 1200);
+    return;
+  }
   const inp = e.target.closest("[data-precio]");
   if (!inp) return;
   const id = Number(inp.dataset.precio);
@@ -986,6 +1121,7 @@ function abrirModal(p) {
   $("p-unidad").value = p?.unidad || "unidad";
   $("p-precio").value = p?.precio ?? "";
   $("p-min").value = p?.minimo || 1;
+  $("p-stock").value = controlaStock(p) ? p.stock : "";
   $("p-orden").value = p?.orden || 0;
   $("p-activo").checked = p ? p.activo : true;
   $("p-preview").hidden = !p?.imagen_url;
@@ -1052,6 +1188,7 @@ $("form-prod").addEventListener("submit", async (e) => {
       minimo: Math.max(1, parseInt($("p-min").value) || 1),
       orden: parseInt($("p-orden").value) || 0,
       activo: $("p-activo").checked,
+      stock: $("p-stock").value.trim() === "" ? null : Math.max(0, Math.floor(Number($("p-stock").value) || 0)),
     };
     if (imagenNueva) {
       const archivo = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
@@ -1278,62 +1415,203 @@ async function cargarJsPDF() {
 // El PDF usa fuentes estándar: se reemplazan símbolos que no soportan
 const pdfTxt = (s) => String(s ?? "").replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/[–—]/g, "-").replace(/[^\x00-\xff]/g, "");
 
+/* ---------- Resumen del mes (ventas y stock) ---------- */
+(() => {
+  const h = new Date();
+  $("mes-resumen").value = `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, "0")}`;
+})();
+
+async function datosResumenMes() {
+  let [y, m] = ($("mes-resumen").value || "").split("-").map(Number);
+  if (!y || !m || m < 1 || m > 12) { const h = new Date(); y = h.getFullYear(); m = h.getMonth() + 1; }
+  const desde = new Date(y, m - 1, 1), hasta = new Date(y, m, 1);
+  const titulo = desde.toLocaleDateString("es-AR", { month: "long", year: "numeric" });
+  const { data, error } = await sb.from("pedidos").select("*")
+    .gte("created_at", desde.toISOString()).lt("created_at", hasta.toISOString())
+    .order("created_at", { ascending: true }).limit(10000);
+  if (error) throw error;
+  await cargarProductosAdmin(); // stock al día
+
+  const todos = data || [];
+  const validos = todos.filter((p) => p.estado !== "Cancelado");
+  const ventas = validos.reduce((s, p) => s + Number(p.total || 0), 0);
+  const cobrado = validos.filter((p) => pagoDe(p) === "Pagado").reduce((s, p) => s + Number(p.total || 0), 0);
+
+  const porProd = new Map();
+  validos.forEach((p) => (p.items || []).forEach((i) => {
+    const k = i.id != null ? "id" + i.id : "n" + i.nombre;
+    const a = porProd.get(k) || { nombre: i.nombre, unidad: i.unidad || "unidad", cant: 0, monto: 0 };
+    a.cant += Number(i.cantidad) || 0;
+    a.monto += Number(i.subtotal) || (Number(i.precio) || 0) * (Number(i.cantidad) || 0);
+    porProd.set(k, a);
+  }));
+  const vendidos = [...porProd.values()].sort((a, b) => b.monto - a.monto);
+
+  const porCliente = new Map();
+  validos.forEach((p) => {
+    const k = (p.negocio || "").trim().toLowerCase();
+    const a = porCliente.get(k) || { negocio: p.negocio, pedidos: 0, monto: 0 };
+    a.pedidos++; a.monto += Number(p.total || 0);
+    porCliente.set(k, a);
+  });
+  const clientes = [...porCliente.values()].sort((a, b) => b.monto - a.monto);
+
+  const ordenEstado = { "Sin stock": 0, "Poco stock": 1, "OK": 2, "Sin control": 3 };
+  const stock = productosAdmin.map((p) => {
+    const st = controlaStock(p) ? Number(p.stock) : null;
+    const estado = st === null ? "Sin control" : st <= 0 ? "Sin stock" : st <= POCO_STOCK ? "Poco stock" : "OK";
+    return { nombre: p.nombre + (p.activo ? "" : " (oculto)"), unidad: p.unidad || "unidad", vendido: porProd.get("id" + p.id)?.cant || 0, stock: st, estado };
+  }).sort((a, b) => ordenEstado[a.estado] - ordenEstado[b.estado] || a.nombre.localeCompare(b.nombre, "es"));
+
+  const porEstado = {};
+  todos.forEach((p) => (porEstado[p.estado] = (porEstado[p.estado] || 0) + 1));
+
+  return {
+    titulo: titulo.charAt(0).toUpperCase() + titulo.slice(1),
+    pedidos: todos.length, validos: validos.length, cancelados: todos.length - validos.length,
+    ventas, cobrado, pendiente: ventas - cobrado,
+    ticket: validos.length ? ventas / validos.length : 0,
+    unidades: vendidos.reduce((s, v) => s + v.cant, 0),
+    vendidos, clientes, stock, porEstado,
+    sinStock: stock.filter((x) => x.estado === "Sin stock").length,
+    pocoStock: stock.filter((x) => x.estado === "Poco stock").length,
+  };
+}
+
 $("dl-pdf").addEventListener("click", async () => {
-  if (!pedidos.length) return alert("No hay pedidos para descargar.");
   const btn = $("dl-pdf");
   btn.disabled = true; btn.textContent = "Generando…";
+  let r = null;
+  try { r = await datosResumenMes(); }
+  catch (err) { console.warn("Resumen del mes:", err); }
+  if (!r && !pedidos.length) {
+    btn.disabled = false; btn.textContent = "⬇ Descargar PDF";
+    return alert("No se pudieron traer los datos. Revisá tu conexión e intentá de nuevo.");
+  }
   try {
     await cargarJsPDF();
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
     const W = doc.internal.pageSize.getWidth();
-    const t = totales();
-    doc.setFillColor(11, 11, 11); doc.rect(0, 0, W, 30, "F");
-    try { doc.addImage(LOGO, "JPEG", 10, 4, 22, 22); } catch {}
-    doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold"); doc.setFontSize(18);
-    doc.text("Registro de pedidos mayoristas", 38, 14);
-    doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(235, 151, 29);
-    doc.text(pdfTxt(`Sin TACC Tucumán  ·  ${textoFiltros()}  ·  Generado ${fechaHora(new Date().toISOString())}`), 38, 21);
-    doc.setTextColor(0, 0, 0); doc.setFontSize(10);
-    doc.text(pdfTxt(`Pedidos: ${pedidos.length}     Total: ${fmtPrecio(t.total)}     Cobrado: ${fmtPrecio(t.cobrado)}     Por cobrar: ${fmtPrecio(t.pendiente)}`), 10, 37);
+    const H = doc.internal.pageSize.getHeight();
+    const NARANJA = [235, 151, 29];
 
-    doc.autoTable({
-      startY: 41,
-      margin: { left: 10, right: 10 },
-      head: [["N°", "Fecha", "Cliente", "Localidad / Entrega", "Productos", "Total", "Pedido", "Pago"]],
-      body: pedidos.map((p) => [
-        p.id,
-        fechaHora(p.created_at),
-        pdfTxt(`${p.negocio}\n${p.contacto} · ${p.telefono}${p.cuit ? "\nCUIT " + p.cuit : ""}`),
-        pdfTxt(`${p.localidad}\n${p.entrega}${p.direccion ? "\n" + p.direccion : ""}${p.fecha_entrega ? "\nFecha: " + fechaCorta(p.fecha_entrega) : ""}`),
-        pdfTxt((p.items || []).map((i) => `${i.cantidad} x ${i.nombre}`).join("\n") + (p.observaciones ? `\nObs: ${p.observaciones}` : "")),
-        pdfTxt(fmtPrecio(p.total)),
-        p.estado,
-        pagoDe(p),
-      ]),
-      styles: { fontSize: 8.5, cellPadding: 2, valign: "top", lineColor: [220, 220, 220], lineWidth: 0.1 },
-      headStyles: { fillColor: [235, 151, 29], textColor: [0, 0, 0], fontStyle: "bold" },
-      alternateRowStyles: { fillColor: [250, 246, 240] },
-      columnStyles: { 0: { cellWidth: 11 }, 1: { cellWidth: 25 }, 2: { cellWidth: 52 }, 3: { cellWidth: 45 }, 5: { cellWidth: 26, halign: "right", fontStyle: "bold" }, 6: { cellWidth: 22 }, 7: { cellWidth: 22, fontStyle: "bold" } },
+    const encabezado = (titulo, sub) => {
+      doc.setFillColor(11, 11, 11); doc.rect(0, 0, W, 30, "F");
+      try { doc.addImage(LOGO, "JPEG", 10, 4, 22, 22); } catch {}
+      doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold"); doc.setFontSize(18);
+      doc.text(pdfTxt(titulo), 38, 14);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(...NARANJA);
+      doc.text(pdfTxt(sub), 38, 21);
+      doc.setTextColor(0, 0, 0);
+    };
+    const seccion = (texto, y) => {
+      if (y > H - 30) { doc.addPage(); y = 16; }
+      doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.setTextColor(0, 0, 0);
+      doc.text(pdfTxt(texto), 10, y);
+      doc.setDrawColor(...NARANJA); doc.setLineWidth(0.6); doc.line(10, y + 1.5, 10 + doc.getTextWidth(pdfTxt(texto)), y + 1.5);
+      return y + 4;
+    };
+    const tabla = { margin: { left: 10, right: 10 }, styles: { fontSize: 8.5, cellPadding: 1.8, lineColor: [220, 220, 220], lineWidth: 0.1 },
+      headStyles: { fillColor: NARANJA, textColor: [0, 0, 0], fontStyle: "bold" }, footStyles: { fillColor: [245, 236, 222], textColor: [0, 0, 0], fontStyle: "bold" },
+      alternateRowStyles: { fillColor: [250, 246, 240] } };
+    const generado = `Generado ${fechaHora(new Date().toISOString())}`;
+
+    // ---------- Página 1: resumen del mes ----------
+    if (r) {
+    encabezado(`Resumen de ${r.titulo}`, `Sin TACC Tucumán  ·  Ventas y stock  ·  ${generado}`);
+    const kpis = [
+      ["Ventas del mes", fmtPrecio(r.ventas)], ["Cobrado", fmtPrecio(r.cobrado)], ["Por cobrar", fmtPrecio(r.pendiente)],
+      ["Pedidos", `${r.validos}${r.cancelados ? ` (+${r.cancelados} cancel.)` : ""}`], ["Ticket promedio", fmtPrecio(r.ticket)], ["Unidades vendidas", String(r.unidades)],
+    ];
+    const bw = (W - 20 - 5 * 4) / 6;
+    kpis.forEach(([t, v], k) => {
+      const x = 10 + k * (bw + 4), y = 36;
+      doc.setFillColor(250, 246, 240); doc.setDrawColor(...NARANJA); doc.setLineWidth(0.3); doc.roundedRect(x, y, bw, 18, 2, 2, "FD");
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(110, 110, 110); doc.text(pdfTxt(t.toUpperCase()), x + 3, y + 6);
+      doc.setFont("helvetica", "bold"); doc.setFontSize(12.5); doc.setTextColor(k === 1 ? 30 : k === 2 ? 200 : 0, k === 1 ? 130 : k === 2 ? 40 : 0, k === 1 ? 50 : k === 2 ? 30 : 0);
+      doc.text(pdfTxt(v), x + 3, y + 14);
+    });
+    doc.setTextColor(0, 0, 0); doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+    const est = Object.entries(r.porEstado).map(([k, v]) => `${k}: ${v}`).join("   ·   ");
+    doc.text(pdfTxt(`Clientes que compraron: ${r.clientes.length}${est ? "   ·   " + est : ""}   ·   Productos sin stock: ${r.sinStock}   ·   Con poco stock: ${r.pocoStock}`), 10, 60);
+
+    let y = seccion("Ventas por producto", 68);
+    doc.autoTable({ ...tabla, startY: y,
+      head: [["Producto", "Unidad", "Cantidad vendida", "Total", "% de las ventas"]],
+      body: r.vendidos.length ? r.vendidos.map((v) => [pdfTxt(v.nombre), pdfTxt(v.unidad), v.cant, pdfTxt(fmtPrecio(v.monto)), r.ventas ? (v.monto / r.ventas * 100).toFixed(1).replace(".", ",") + " %" : "-"])
+        : [["Sin ventas en este mes", "", "", "", ""]],
+      foot: r.vendidos.length ? [["Total", "", r.unidades, pdfTxt(fmtPrecio(r.ventas)), "100 %"]] : undefined,
+      columnStyles: { 2: { halign: "right", cellWidth: 34 }, 3: { halign: "right", cellWidth: 34 }, 4: { halign: "right", cellWidth: 30 }, 1: { cellWidth: 36 } },
+    });
+
+    y = seccion("Stock actual", doc.lastAutoTable.finalY + 9);
+    doc.autoTable({ ...tabla, startY: y,
+      head: [["Producto", "Unidad", "Vendido en el mes", "Stock actual", "Estado"]],
+      body: r.stock.length ? r.stock.map((x) => [pdfTxt(x.nombre), pdfTxt(x.unidad), x.vendido, x.stock === null ? "Sin control" : x.stock, x.estado])
+        : [["No hay productos cargados", "", "", "", ""]],
+      columnStyles: { 2: { halign: "right", cellWidth: 34 }, 3: { halign: "right", cellWidth: 30 }, 4: { cellWidth: 30, fontStyle: "bold" }, 1: { cellWidth: 36 } },
       didParseCell: (d) => {
-        if (d.section === "body" && d.column.index === 7) d.cell.styles.textColor = d.cell.raw === "Pagado" ? [30, 130, 50] : [200, 40, 30];
-      },
-      didDrawPage: () => {
-        const n = doc.internal.getNumberOfPages();
-        doc.setFontSize(8); doc.setTextColor(140);
-        doc.text(`Página ${n}`, W - 10, doc.internal.pageSize.getHeight() - 6, { align: "right" });
+        if (d.section !== "body" || d.column.index !== 4) return;
+        d.cell.styles.textColor = d.cell.raw === "Sin stock" ? [200, 40, 30] : d.cell.raw === "Poco stock" ? [190, 110, 0] : d.cell.raw === "OK" ? [30, 130, 50] : [120, 120, 120];
       },
     });
-    doc.save(`pedidos-${sello()}.pdf`);
+
+    if (r.clientes.length) {
+      y = seccion("Mejores clientes del mes", doc.lastAutoTable.finalY + 9);
+      doc.autoTable({ ...tabla, startY: y,
+        head: [["Negocio", "Pedidos", "Total comprado"]],
+        body: r.clientes.slice(0, 10).map((c) => [pdfTxt(c.negocio), c.pedidos, pdfTxt(fmtPrecio(c.monto))]),
+        columnStyles: { 1: { halign: "right", cellWidth: 30 }, 2: { halign: "right", cellWidth: 40 } },
+      });
+    }
+
+    }
+
+    // ---------- Registro de pedidos (con los filtros de la pantalla) ----------
+    if (pedidos.length) {
+      if (r) doc.addPage();
+      const t = totales();
+      encabezado("Registro de pedidos", `Sin TACC Tucumán  ·  ${textoFiltros()}  ·  ${generado}`);
+      doc.setFontSize(10);
+      doc.text(pdfTxt(`Pedidos: ${pedidos.length}     Total: ${fmtPrecio(t.total)}     Cobrado: ${fmtPrecio(t.cobrado)}     Por cobrar: ${fmtPrecio(t.pendiente)}`), 10, 37);
+      doc.autoTable({ ...tabla, startY: 41,
+        head: [["N°", "Fecha", "Cliente", "Localidad / Entrega", "Productos", "Total", "Pedido", "Pago"]],
+        body: pedidos.map((p) => [
+          p.id,
+          fechaHora(p.created_at),
+          pdfTxt(`${p.negocio}\n${p.contacto} · ${p.telefono}`),
+          pdfTxt(`${p.localidad}\n${p.entrega}${p.direccion ? "\n" + p.direccion : ""}`),
+          pdfTxt((p.items || []).map((i) => `${i.cantidad} x ${i.nombre}`).join("\n") + (p.observaciones ? `\nObs: ${p.observaciones}` : "")),
+          pdfTxt(fmtPrecio(p.total)),
+          p.estado,
+          pagoDe(p),
+        ]),
+        styles: { ...tabla.styles, valign: "top", cellPadding: 2 },
+        columnStyles: { 0: { cellWidth: 11 }, 1: { cellWidth: 25 }, 2: { cellWidth: 52 }, 3: { cellWidth: 45 }, 5: { cellWidth: 26, halign: "right", fontStyle: "bold" }, 6: { cellWidth: 22 }, 7: { cellWidth: 22, fontStyle: "bold" } },
+        didParseCell: (d) => {
+          if (d.section === "body" && d.column.index === 7) d.cell.styles.textColor = d.cell.raw === "Pagado" ? [30, 130, 50] : [200, 40, 30];
+        },
+      });
+    }
+
+    // Números de página
+    const n = doc.internal.getNumberOfPages();
+    for (let k = 1; k <= n; k++) {
+      doc.setPage(k); doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(140);
+      doc.text(pdfTxt(`Página ${k} de ${n}`), W - 10, H - 6, { align: "right" });
+    }
+    const [yy, mm] = ($("mes-resumen").value || sello()).split("-");
+    doc.save(`resumen-${yy}-${mm}_pedidos-${sello()}.pdf`);
   } catch (err) {
     console.warn("PDF:", err);
-    imprimirRegistro(); // sin conexión a la librería: versión para imprimir / guardar como PDF
+    imprimirRegistro(r); // sin conexión a la librería: versión para imprimir / guardar como PDF
   } finally {
     btn.disabled = false; btn.textContent = "⬇ Descargar PDF";
   }
 });
 
-function imprimirRegistro() {
+function imprimirRegistro(r) {
   // Se arma con el DOM (sin escribir etiquetas html/head/body en texto),
   // así ninguna herramienta (Live Server, editores) puede romper el código.
   const t = totales();
@@ -1342,14 +1620,27 @@ function imprimirRegistro() {
   const d = w.document;
   d.title = "Pedidos " + sello();
   const estilo = d.createElement("style");
-  estilo.textContent = "body{font:12px system-ui,sans-serif;margin:16px;color:#000}h1{font-size:18px;margin:0}table{width:100%;border-collapse:collapse;margin-top:10px}th{background:#eb971d;text-align:left}th,td{border:1px solid #ccc;padding:4px;vertical-align:top}.r{text-align:right}@page{size:A4 landscape;margin:10mm}";
+  estilo.textContent = "body{font:12px system-ui,sans-serif;margin:16px;color:#000}h1{font-size:18px;margin:0}h2{font-size:14px;margin:16px 0 0}table{width:100%;border-collapse:collapse;margin-top:8px}th{background:#eb971d;text-align:left}th,td{border:1px solid #ccc;padding:4px;vertical-align:top}.r{text-align:right}.k{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.k div{border:1px solid #eb971d;border-radius:6px;padding:6px 10px}.k b{display:block;font-size:15px}.salto{page-break-before:always}@page{size:A4 landscape;margin:10mm}";
   d.head.appendChild(estilo);
-  const filas = pedidos.map((p) => "<tr><td>" + p.id + "</td><td>" + fechaHora(p.created_at) + "</td><td>" + esc(p.negocio) + "<br>" + esc(p.contacto) + " · " + esc(p.telefono) +
-    "</td><td>" + esc(p.localidad) + "<br>" + esc(p.entrega) + "</td><td>" + (p.items || []).map((i) => i.cantidad + " x " + esc(i.nombre)).join("<br>") +
-    "</td><td class='r'>" + fmtPrecio(p.total) + "</td><td>" + esc(p.estado) + "</td><td>" + esc(pagoDe(p)) + "</td></tr>").join("");
-  d.body.innerHTML = "<h1>Registro de pedidos · Sin TACC Tucumán</h1><div>" + esc(textoFiltros()) + " · Total " + fmtPrecio(t.total) +
-    " · Cobrado " + fmtPrecio(t.cobrado) + " · Por cobrar " + fmtPrecio(t.pendiente) + "</div>" +
-    "<table><tr><th>N°</th><th>Fecha</th><th>Cliente</th><th>Entrega</th><th>Productos</th><th>Total</th><th>Pedido</th><th>Pago</th></tr>" + filas + "</table>";
+  let html = "";
+  if (r) {
+    html += "<h1>Resumen de " + esc(r.titulo) + " · Sin TACC Tucumán</h1><div class='k'>" +
+      [["Ventas del mes", fmtPrecio(r.ventas)], ["Cobrado", fmtPrecio(r.cobrado)], ["Por cobrar", fmtPrecio(r.pendiente)], ["Pedidos", r.validos + (r.cancelados ? " (+" + r.cancelados + " cancel.)" : "")], ["Ticket promedio", fmtPrecio(r.ticket)], ["Unidades vendidas", r.unidades]]
+        .map(([a, b]) => "<div>" + a + "<b>" + esc(b) + "</b></div>").join("") + "</div>" +
+      "<h2>Ventas por producto</h2><table><tr><th>Producto</th><th>Unidad</th><th>Cantidad</th><th>Total</th></tr>" +
+      (r.vendidos.map((v) => "<tr><td>" + esc(v.nombre) + "</td><td>" + esc(v.unidad) + "</td><td class='r'>" + v.cant + "</td><td class='r'>" + fmtPrecio(v.monto) + "</td></tr>").join("") || "<tr><td colspan='4'>Sin ventas en este mes</td></tr>") + "</table>" +
+      "<h2>Stock actual</h2><table><tr><th>Producto</th><th>Unidad</th><th>Vendido en el mes</th><th>Stock actual</th><th>Estado</th></tr>" +
+      r.stock.map((x) => "<tr><td>" + esc(x.nombre) + "</td><td>" + esc(x.unidad) + "</td><td class='r'>" + x.vendido + "</td><td class='r'>" + (x.stock === null ? "Sin control" : x.stock) + "</td><td>" + x.estado + "</td></tr>").join("") + "</table>";
+  }
+  if (pedidos.length) {
+    const filas = pedidos.map((p) => "<tr><td>" + p.id + "</td><td>" + fechaHora(p.created_at) + "</td><td>" + esc(p.negocio) + "<br>" + esc(p.contacto) + " · " + esc(p.telefono) +
+      "</td><td>" + esc(p.localidad) + "<br>" + esc(p.entrega) + "</td><td>" + (p.items || []).map((i) => i.cantidad + " x " + esc(i.nombre)).join("<br>") +
+      "</td><td class='r'>" + fmtPrecio(p.total) + "</td><td>" + esc(p.estado) + "</td><td>" + esc(pagoDe(p)) + "</td></tr>").join("");
+    html += "<h1 class='" + (r ? "salto" : "") + "'>Registro de pedidos · Sin TACC Tucumán</h1><div>" + esc(textoFiltros()) + " · Total " + fmtPrecio(t.total) +
+      " · Cobrado " + fmtPrecio(t.cobrado) + " · Por cobrar " + fmtPrecio(t.pendiente) + "</div>" +
+      "<table><tr><th>N°</th><th>Fecha</th><th>Cliente</th><th>Entrega</th><th>Productos</th><th>Total</th><th>Pedido</th><th>Pago</th></tr>" + filas + "</table>";
+  }
+  d.body.innerHTML = html;
   w.focus();
   setTimeout(() => { try { w.print(); } catch (e) {} }, 400);
 }
